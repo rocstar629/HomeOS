@@ -149,6 +149,11 @@ Notes:
 
 - The `/app/data` volume persists the credentials saved from the Settings
   screen across container updates.
+- **Permissions are handled automatically:** on start the container fixes
+  ownership of the mounted data folder (as root), then drops to the unprivileged
+  app user (uid 1001). No manual `chown` is needed.
+  *(Old images don't do this — if saving settings fails with `EACCES`, run
+  `chown -R 1001:1001 <host-path>/data` on the server or update the image.)*
 - First time only: the GHCR package starts as **private**. Make it public at
   https://github.com/rocstar629/HomeOS/pkgs/container/homeos
   (Package settings → Change visibility → Public) so Unraid can pull without
@@ -156,7 +161,8 @@ Notes:
 - On Unraid: *Docker → Add Container*, image `ghcr.io/rocstar629/homeos:latest`,
   port `3000→3000`, path `/app/data` mapped to a folder under `/mnt/user/appdata`.
 
-The image runs as a non-root user with Next.js standalone output.
+The image runs Next.js standalone output; it starts as root only long enough
+to fix data-folder ownership, then runs the server as uid 1001 (`nextjs`).
 
 ## Roadmap (not yet built)
 

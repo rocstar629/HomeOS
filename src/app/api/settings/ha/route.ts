@@ -69,7 +69,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, location: test.location, version: test.version });
   }
 
-  await saveHaFileConfig(url, effectiveToken);
+  try {
+    await saveHaFileConfig(url, effectiveToken);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === 'EACCES' || code === 'EROFS') {
+      return NextResponse.json(
+        {
+          error:
+            'Permission denied writing to the data folder. On Docker/Unraid, make the mounted folder writable by the container user: chown -R 1001:1001 <host-path-for>/data',
+        },
+        { status: 500 }
+      );
+    }
+    return NextResponse.json({ error: 'Failed to save settings.' }, { status: 500 });
+  }
+
   return NextResponse.json({
     ok: true,
     location: test.location,
