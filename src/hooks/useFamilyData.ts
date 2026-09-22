@@ -12,6 +12,7 @@ import {
   normalizeHomeSummary,
   normalizeDevice,
   normalizeWeather,
+  enrichPeopleLocations,
 } from '@/lib/homeassistant/normalization';
 
 /** People (person.* entities). */
@@ -21,9 +22,11 @@ export function usePeople() {
 
   const data = useMemo<Person[] | undefined>(() => {
     if (isMock) return MOCK_PEOPLE;
-    return states.data
-      ?.filter((e) => e.entity_id.startsWith('person.'))
+    if (!states.data) return undefined;
+    const people = states.data
+      .filter((e) => e.entity_id.startsWith('person.'))
       .map(normalizePerson);
+    return enrichPeopleLocations(people, states.data);
   }, [isMock, states.data]);
 
   return { data, isLoading: !ready || (!isMock && states.isLoading), isError: !isMock && states.isError };

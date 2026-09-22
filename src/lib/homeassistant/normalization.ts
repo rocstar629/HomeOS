@@ -2,6 +2,19 @@ import { HAEntity } from './types';
 import { Person, Place, HomeSummary, DeviceType, WeatherInfo } from '@/types/family';
 
 /**
+ * Coerce HA attribute values to finite numbers. Some integrations send
+ * numeric attributes as strings ("51.5"), which is still valid GPS data.
+ */
+function num(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+/**
  * Home Assistant person entities report their location as the entity state:
  * - "home" when inside the Home zone
  * - "not_home" when outside every zone
@@ -26,8 +39,10 @@ export function normalizePerson(entity: HAEntity): Person {
     currentZone = state;
   }
 
-  const num = (value: unknown): number | undefined =>
-    typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  // Some HA versions expose the linked tracker as an entity-id attribute.
+  const source = attributes.source;
+  const trackerEntity =
+    typeof source === 'string' && source.startsWith('device_tracker.') ? source : undefined;
 
   return {
     id: entity_id,
@@ -42,7 +57,70 @@ export function normalizePerson(entity: HAEntity): Person {
     batteryLevel: num(attributes.battery_level),
     charging: attributes.battery_state === 'charging',
     sourceEntity: entity_id,
+    trackerEntity,
   };
+}
+
+/**
+ * Person entities normally carry coordinates, but plenty of installations
+ * keep GPS only on the linked device_tracker (or send it as strings).
+ * Fill in missing person coordinates from trackers — never overwrite
+ * coordinates the person already has.
+ *
+ * Matching order:
+ *   1. explicit source attribute (person.trackerEntity)
+ *   2. same suffix (person.dad → device_tracker.dad)
+ *   3. identical friendly name
+ */
+export function enrichPeopleLocations(people: Person[], entities: HAEntity[]): Person[] {
+  const trackers = entities.filter((e) => e.entity_id.startsWith('device_tracker.'));
+  if (trackers.length === 0) return people;
+
+  const coordsOf = (
+    tracker: HAEntity
+  ): { latitude: number; longitude: number; gpsAccuracy?: number } | null => {
+    const latitude = num(tracker.attributes.latitude);
+    const longitude = num(tracker.attributes.longitude);
+    if (latitude === undefined || longitude === undefined) return null;
+    return { latitude, longitude, gpsAccuracy: num(tracker.attributes.gps_accuracy) };
+  };
+
+  const byEntityId = new Map(trackers.map((t) => [t.entity_id, t] as const));
+  const bySuffix = new Map(
+    trackers.map((t) => [t.entity_id.slice('device_tracker.'.length), t] as const)
+  );
+  const byName = new Map<string, HAEntity>();
+  for (const tracker of trackers) {
+    const name = tracker.attributes.friendly_name;
+    if (typeof name === 'string' && name.trim()) {
+      const key = name.trim().toLowerCase();
+      if (!byName.has(key)) byName.set(key, tracker);
+    }
+  }
+
+  return people.map((person) => {
+    if (person.latitude !== undefined && person.longitude !== undefined) return person;
+
+    const candidates: (HAEntity | undefined)[] = [
+      person.trackerEntity ? byEntityId.get(person.trackerEntity) : undefined,
+      bySuffix.get(person.id.slice('person.'.length)),
+      byName.get(person.name.trim().toLowerCase()),
+    ];
+
+    for (const tracker of candidates) {
+      if (!tracker) continue;
+      const coords = coordsOf(tracker);
+      if (coords) {
+        return {
+          ...person,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          gpsAccuracy: coords.gpsAccuracy ?? person.gpsAccuracy,
+        };
+      }
+    }
+    return person;
+  });
 }
 
 /**

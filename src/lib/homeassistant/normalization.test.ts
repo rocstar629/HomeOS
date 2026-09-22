@@ -6,6 +6,7 @@ import {
   normalizeDevice,
   normalizeWeather,
   haversineMeters,
+  enrichPeopleLocations,
 } from './normalization';
 import { HAEntity } from './types';
 
@@ -69,6 +70,91 @@ describe('normalizePerson', () => {
     );
     expect(person.latitude).toBeUndefined();
     expect(person.longitude).toBeUndefined();
+  });
+
+  it('accepts coordinates sent as numeric strings', () => {
+    const person = normalizePerson(
+      entity('person.s', 'not_home', { latitude: '51.5', longitude: '-0.13' })
+    );
+    expect(person.latitude).toBe(51.5);
+    expect(person.longitude).toBe(-0.13);
+  });
+
+  it('captures an entity-id source as trackerEntity', () => {
+    const person = normalizePerson(
+      entity('person.dad', 'home', { source: 'device_tracker.dads_phone' })
+    );
+    expect(person.trackerEntity).toBe('device_tracker.dads_phone');
+
+    // Non-entity sources (e.g. "gps") are ignored.
+    expect(normalizePerson(entity('person.x', 'home', { source: 'gps' })).trackerEntity)
+      .toBeUndefined();
+  });
+});
+
+describe('enrichPeopleLocations', () => {
+  const dad = normalizePerson(entity('person.dad', 'not_home', { friendly_name: 'Dad' }));
+  const mom = normalizePerson(
+    entity('person.mom', 'home', { friendly_name: 'Mom', latitude: 1.1, longitude: 2.2 })
+  );
+
+  it('keeps people that already have coordinates untouched', () => {
+    const result = enrichPeopleLocations(
+      [mom],
+      [entity('device_tracker.mom', 'home', { latitude: 9, longitude: 9 })]
+    );
+    expect(result[0].latitude).toBe(1.1);
+    expect(result[0].longitude).toBe(2.2);
+  });
+
+  it('fills missing coordinates from a same-suffix device tracker', () => {
+    const result = enrichPeopleLocations(
+      [dad],
+      [entity('device_tracker.dad', 'not_home', { latitude: 51.4, longitude: -0.2, gps_accuracy: 15 })]
+    );
+    expect(result[0].latitude).toBe(51.4);
+    expect(result[0].longitude).toBe(-0.2);
+    expect(result[0].gpsAccuracy).toBe(15);
+  });
+
+  it('fills missing coordinates via explicit source attribute', () => {
+    const person = normalizePerson(
+      entity('person.alex', 'not_home', { source: 'device_tracker.pixel_7' })
+    );
+    const result = enrichPeopleLocations(
+      [person],
+      [entity('device_tracker.pixel_7', 'not_home', { latitude: '40.7', longitude: '-74.0' })]
+    );
+    expect(result[0].latitude).toBe(40.7);
+    expect(result[0].longitude).toBe(-74);
+  });
+
+  it('fills missing coordinates via matching friendly name', () => {
+    const result = enrichPeopleLocations(
+      [dad],
+      [entity('device_tracker.dads_iphone', 'not_home', {
+        friendly_name: 'Dad',
+        latitude: 51.9,
+        longitude: -0.1,
+      })]
+    );
+    expect(result[0].latitude).toBe(51.9);
+  });
+
+  it('leaves people alone when no tracker matches', () => {
+    const result = enrichPeopleLocations(
+      [dad],
+      [entity('device_tracker.stranger', 'home', { latitude: 10, longitude: 10 })]
+    );
+    expect(result[0].latitude).toBeUndefined();
+  });
+
+  it('ignores trackers without coordinates', () => {
+    const result = enrichPeopleLocations(
+      [dad],
+      [entity('device_tracker.dad', 'not_home', { source: 'bluetooth' })]
+    );
+    expect(result[0].latitude).toBeUndefined();
   });
 });
 

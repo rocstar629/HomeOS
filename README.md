@@ -28,7 +28,7 @@ Implemented:
 
 - TypeScript (strict), Next.js App Router, React, Tailwind CSS
 - TanStack Query for server state
-- MapLibre GL for maps (provider-swappable)
+- MapLibre GL with OpenStreetMap street tiles (no API key)
 - Vitest for tests
 
 ## Getting Started

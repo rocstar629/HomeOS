@@ -13,6 +13,8 @@ export interface Person {
   batteryLevel?: number;
   charging?: boolean;
   sourceEntity?: string;
+  /** Linked device_tracker entity id, when HA exposes it. */
+  trackerEntity?: string;
 }
 
 export interface Place {
