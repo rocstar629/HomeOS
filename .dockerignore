@@ -1,0 +1,14 @@
+# Build context hygiene: never copy local deps, build output, or credentials.
+node_modules
+.next
+.git
+.github
+.env*
+!.env.example
+data
+coverage
+*.tsbuildinfo
+.DS_Store
+npm-debug.log*
+Dockerfile
+.dockerignore
